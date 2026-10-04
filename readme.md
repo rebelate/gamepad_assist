@@ -48,3 +48,94 @@ Press **R3 / Right Thumb** to cycle:
 
 ```text
 RACE → DRIFT → NO ASSIST → RACE
+```
+# Config
+
+All values: **1–100**
+
+## Basic
+
+```ini
+DEADZONE=10
+STEERING_GAMMA=50
+```
+
+- `DEADZONE` — Stick deadzone.
+  - Increase = less sensitive
+  - Decrease = more sensitive
+  - Range: 1–100
+
+- `STEERING_GAMMA` — Steering response around center.
+  - Increase = smoother
+  - Decrease = more sensitive
+  - Range: 1–100
+
+## Race
+
+```ini
+RACE_NORMAL_RATE=35
+RACE_RETURN_RATE=55
+RACE_SPEED_SENSITIVITY=70
+RACE_COUNTERSTEER_GAIN=5
+RACE_COUNTERSTEER_MAX=30
+```
+
+- `RACE_NORMAL_RATE` — How fast steering follows the stick.
+  - Increase = faster
+  - Decrease = smoother
+  - Range: 1–100
+
+- `RACE_RETURN_RATE` — How fast steering returns to center.
+  - Increase = faster return
+  - Decrease = slower return
+  - Range: 1–100
+
+- `RACE_SPEED_SENSITIVITY` — Reduces steering at high speed.
+  - Increase = more stable
+  - Decrease = more steering
+  - Range: 1–100
+
+- `RACE_COUNTERSTEER_GAIN` — Countersteer strength.
+  - Increase = stronger assist
+  - Decrease = weaker assist
+  - Range: 1–100
+
+- `RACE_COUNTERSTEER_MAX` — Maximum countersteer.
+  - Increase = larger correction
+  - Decrease = smaller correction
+  - Range: 1–100
+
+## Drift
+
+```ini
+DRIFT_NORMAL_RATE=38
+DRIFT_RETURN_RATE=48
+DRIFT_SPEED_SENSITIVITY=10
+DRIFT_COUNTERSTEER_GAIN=32
+DRIFT_COUNTERSTEER_MAX=42
+```
+
+- `DRIFT_NORMAL_RATE` — How fast steering follows the stick.
+  - Increase = faster
+  - Decrease = smoother
+  - Range: 1–100
+
+- `DRIFT_RETURN_RATE` — How fast steering returns to center.
+  - Increase = faster return
+  - Decrease = slower return
+  - Range: 1–100
+
+- `DRIFT_SPEED_SENSITIVITY` — Reduces steering at high speed.
+  - Increase = more stable
+  - Decrease = more steering
+  - Range: 1–100
+
+- `DRIFT_COUNTERSTEER_GAIN` — Countersteer strength.
+  - Increase = stronger assist
+  - Decrease = weaker assist
+  - Range: 1–100
+
+- `DRIFT_COUNTERSTEER_MAX` — Maximum countersteer.
+  - Increase = larger correction
+  - Decrease = smaller correction
+  - Range: 1–100
