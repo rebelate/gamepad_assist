@@ -11,13 +11,13 @@ local USER_DEFAULTS = {
     DRIFT_NORMAL_RATE = 38,
     DRIFT_RETURN_RATE = 48,
     DRIFT_SPEED_SENSITIVITY = 10,
-    DRIFT_COUNTERSTEER_GAIN = 32,
-    DRIFT_COUNTERSTEER_MAX = 42,
+    DRIFT_COUNTERSTEER_GAIN = 50,
+    DRIFT_COUNTERSTEER_MAX = 60,
 }
 
 local INTERNAL = {
     RACE_HIGH_SPEED_KMH = 200.0,
-    DRIFT_HIGH_SPEED_KMH = 200.0,
+    DRIFT_HIGH_SPEED_KMH = 100.0,
 
     RACE_HIGH_SPEED_RATE_DAMPING = 0.10,
     DRIFT_HIGH_SPEED_RATE_DAMPING = 0.05,
@@ -30,11 +30,8 @@ local INTERNAL = {
     DRIFT_YAW_START = 0.08,
     DRIFT_YAW_FULL = 0.45,
 
-    DRIFT_ASSIST_MIN = 0.10,
-    DRIFT_ASSIST_MAX = 1.00,
-
     CENTER_RETURN_MULTIPLIER = 1.20,
-    COUNTERSTEER_RATE = 8.0,
+    COUNTERSTEER_RATE = 10.0,
 
     MIN_DT = 0.001,
     MAX_DT = 0.05,
@@ -247,14 +244,10 @@ local function getDriftFactor(data)
             INTERNAL.DRIFT_YAW_FULL
         )
 
-    return lerp(
-        INTERNAL.DRIFT_ASSIST_MIN,
-        INTERNAL.DRIFT_ASSIST_MAX,
-        math.max(slipFactor, yawFactor)
-    )
+    return math.max(slipFactor, yawFactor)
 end
 
-local function getCountersteerTarget(data, driverTarget)
+local function getCountersteerTarget(data, driverTarget, dt)
     local ffb = data.ffb
 
     if math.abs(ffb) < 0.001 then
@@ -263,25 +256,37 @@ local function getCountersteerTarget(data, driverTarget)
 
     local correction = -ffb
 
-    if math.abs(driverTarget) > 0.001 and
-        driverTarget * correction > 0 then
-        return 0
+    if mode == "DRIFT" then
+    correction =
+        correction *
+        percent(settings.DRIFT_COUNTERSTEER_GAIN)
+
+    correction =
+        correction *
+        getDriftFactor(data)
+
+    local maxCountersteer =
+        percent(settings.DRIFT_COUNTERSTEER_MAX)
+
+    correction =
+        clamp(
+            correction,
+            -maxCountersteer,
+            maxCountersteer
+        )
+
+    if math.abs(driverTarget) > 0.001 then
+        local sameDirection =
+            driverTarget * correction > 0
+
+        if sameDirection then
+            correction =
+                correction *
+                (1.0 - math.abs(driverTarget))
+        end
     end
 
-    if mode == "DRIFT" then
-        correction =
-            correction *
-            percent(settings.DRIFT_COUNTERSTEER_GAIN)
-
-        correction =
-            correction *
-            getDriftFactor(data)
-
-        return clamp(
-            correction,
-            -percent(settings.DRIFT_COUNTERSTEER_MAX),
-            percent(settings.DRIFT_COUNTERSTEER_MAX)
-        )
+    return correction
     end
 
     local speedFactor =
@@ -362,7 +367,8 @@ local function updateAssisted(data, dt)
     local countersteerTarget =
         getCountersteerTarget(
             data,
-            driverTarget
+            driverTarget,
+            dt
         )
 
     countersteerOutput =
