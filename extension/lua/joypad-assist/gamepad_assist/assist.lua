@@ -1,3 +1,4 @@
+
 local USER_DEFAULTS = {
     DEADZONE = 10,
     STEERING_GAMMA = 65,
@@ -9,11 +10,11 @@ local USER_DEFAULTS = {
     RACE_COUNTERSTEER_MAX = 60,
     RACE_SLIDE_INPUT_REDUCTION = 35,
 
-    DRIFT_NORMAL_RATE = 38,
+    DRIFT_NORMAL_RATE = 10,
     DRIFT_RETURN_RATE = 48,
     DRIFT_SPEED_SENSITIVITY = 10,
     DRIFT_COUNTERSTEER_GAIN = 50,
-    DRIFT_COUNTERSTEER_MAX = 60,
+    DRIFT_COUNTERSTEER_MAX = 45,
 }
 
 local INTERNAL = {
@@ -22,7 +23,10 @@ local INTERNAL = {
     DRIFT_HIGH_SPEED_RATE_DAMPING = 0.05,
 
     RACE_YAW_DAMPING = 0.50,
+    DRIFT_YAW_DAMPING = 0.35,
+
     RACE_COUNTERSTEER_RATE = 99.0,
+    DRIFT_COUNTERSTEER_RATE = 99.0,
 
     RACE_SLIDE_SLIP_START = 0.20,
     RACE_SLIDE_SLIP_FULL = 1.00,
@@ -36,8 +40,8 @@ local INTERNAL = {
     DRIFT_YAW_START = 0.08,
     DRIFT_YAW_FULL = 0.45,
 
+    DRIFT_INPUT_PRIORITY = 0.65,
     RETURN_RATE_MULTIPLIER = 1.20,
-    DRIFT_COUNTERSTEER_RATE = 12.0,
 
     MIN_DT = 0.001,
     MAX_DT = 0.05,
@@ -112,6 +116,10 @@ local function getDriverInput(data)
         2.0,
         percent(settings.STEERING_GAMMA)
     )
+
+    if mode == "DRIFT" then
+        gamma = gamma * 1.42
+    end
 
     return math.sign(input) * math.pow(math.abs(input), gamma)
 end
@@ -305,14 +313,24 @@ local function getRaceSlideFactor(data, axle)
     return factor
 end
 
-local function getRaceSelfSteer(data, axle)
+local function getAxleSelfSteer(
+    data,
+    axle,
+    gainSetting,
+    maxSetting,
+    yawDamping
+)
     if not axle then
         return 0
     end
 
     local car = ac.getCar(0)
-    local angular = car.localAngularVelocity
 
+    if not car or not car.localAngularVelocity then
+        return 0
+    end
+
+    local angular = car.localAngularVelocity
     local steeringLock = 35.0
 
     if data.steerLock and data.steerRatio
@@ -324,7 +342,7 @@ local function getRaceSelfSteer(data, axle)
         end
     end
 
-    local response = percent(settings.RACE_COUNTERSTEER_GAIN)
+    local response = percent(gainSetting)
 
     local exponent = 1.0 + (
         1.0 - math.log10(10.0 * (response * 0.9 + 0.1))
@@ -336,11 +354,14 @@ local function getRaceSelfSteer(data, axle)
         * math.pow(math.abs(normalizedAngle), exponent)
         * 72.0 / steeringLock
 
-    local cap = percent(settings.RACE_COUNTERSTEER_MAX)
-    correction = clamp(correction, -cap, cap)
+    correction = clamp(
+        correction,
+        -percent(maxSetting),
+        percent(maxSetting)
+    )
 
     local damping = angular.y
-        * INTERNAL.RACE_YAW_DAMPING
+        * yawDamping
         * 0.15
         * (30.0 / steeringLock)
 
@@ -357,27 +378,34 @@ end
 
 local function getCountersteerTarget(data, driverTarget, axle)
     if mode == "DRIFT" then
-        local ffb = data.ffb
+        local correction = getAxleSelfSteer(
+            data,
+            axle,
+            settings.DRIFT_COUNTERSTEER_GAIN,
+            settings.DRIFT_COUNTERSTEER_MAX,
+            INTERNAL.DRIFT_YAW_DAMPING
+        )
 
-        if math.abs(ffb) < 0.001 then
-            return 0
-        end
+        correction = correction * getDriftFactor(data)
 
-        local correction = -ffb
-            * percent(settings.DRIFT_COUNTERSTEER_GAIN)
-            * getDriftFactor(data)
-
-        local cap = percent(settings.DRIFT_COUNTERSTEER_MAX)
-        correction = clamp(correction, -cap, cap)
-
-        if driverTarget * correction > 0 then
-            correction = correction * (1.0 - math.abs(driverTarget))
+        if driverTarget * correction < 0 then
+            correction = correction * (
+                1.0
+                - percent(INTERNAL.DRIFT_INPUT_PRIORITY)
+                * math.abs(driverTarget)
+            )
         end
 
         return correction
     end
 
-    return getRaceSelfSteer(data, axle)
+    return getAxleSelfSteer(
+        data,
+        axle,
+        settings.RACE_COUNTERSTEER_GAIN,
+        settings.RACE_COUNTERSTEER_MAX,
+        INTERNAL.RACE_YAW_DAMPING
+    )
 end
 
 local function reloadSettings(dt)
@@ -407,7 +435,6 @@ local function updateRaw()
     countersteerOutput = 0
 end
 
-
 local function updateAssisted(data, dt)
     local driverInput = getDriverInput(data)
     local driverTarget = driverInput * getSpeedAuthority(data)
@@ -419,13 +446,19 @@ local function updateAssisted(data, dt)
         axle
     )
 
-    if mode == "RACE" and driverTarget * countersteerTarget < 0 then
+    if mode == "RACE" then
         local slideFactor = getRaceSlideFactor(data, axle)
         local reduction = percent(settings.RACE_SLIDE_INPUT_REDUCTION)
 
-        driverTarget = driverTarget * (
-            1.0 - slideFactor * reduction
+        countersteerTarget = countersteerTarget * (
+            1.0 - slideFactor * reduction * math.abs(driverTarget)
         )
+
+        if driverTarget * countersteerTarget < 0 then
+            driverTarget = driverTarget * (
+                1.0 - slideFactor * reduction
+            )
+        end
     end
 
     local countersteerRate = mode == "RACE"
@@ -440,57 +473,34 @@ local function updateAssisted(data, dt)
     )
 
     local normalRate, returnRate = getSteeringRates(data)
+    local driverRate = normalRate
 
-    if mode == "RACE" then
-        local driverRate = normalRate
-
-        if driverTarget * steerOutput >= 0
-            and math.abs(driverTarget) < math.abs(steerOutput) then
-            driverRate = returnRate * INTERNAL.RETURN_RATE_MULTIPLIER
-        end
-
-        steerOutput = smooth(
-            steerOutput,
-            driverTarget,
-            driverRate,
-            dt
-        )
-
-        local target = clamp(
-            steerOutput + countersteerOutput,
-            -1.0,
-            1.0
-        )
-
-        if math.abs(steerOutput) < 0.0005
-            and math.abs(driverTarget) < 0.0005 then
-            steerOutput = 0
-        end
-
-        data.steer = target
-    else
-        local target = clamp(
-            driverTarget + countersteerOutput,
-            -1.0,
-            1.0
-        )
-
-        local rate = normalRate
-
-        if target * steerOutput >= 0
-            and math.abs(target) < math.abs(steerOutput) then
-            rate = returnRate * INTERNAL.RETURN_RATE_MULTIPLIER
-        end
-
-        steerOutput = smooth(steerOutput, target, rate, dt)
-
-        if math.abs(steerOutput) < 0.0005
-            and math.abs(target) < 0.0005 then
-            steerOutput = 0
-        end
-
-        data.steer = clamp(steerOutput, -1.0, 1.0)
+    if driverTarget * steerOutput >= 0
+        and math.abs(driverTarget) < math.abs(steerOutput) then
+        driverRate = returnRate * INTERNAL.RETURN_RATE_MULTIPLIER
+    elseif mode == "DRIFT"
+        and driverTarget * steerOutput > 0
+        and math.abs(driverTarget) > math.abs(steerOutput) then
+        driverRate = normalRate * 0.65
     end
+
+    steerOutput = smooth(
+        steerOutput,
+        driverTarget,
+        driverRate,
+        dt
+    )
+
+    if math.abs(steerOutput) < 0.0005
+        and math.abs(driverTarget) < 0.0005 then
+        steerOutput = 0
+    end
+
+    data.steer = clamp(
+        steerOutput + countersteerOutput,
+        -1.0,
+        1.0
+    )
 
     data.vibrationLeft = saturate(math.abs(data.ndSlipL))
     data.vibrationRight = saturate(math.abs(data.ndSlipR))
