@@ -1,4 +1,3 @@
-
 local USER_DEFAULTS = {
     DEADZONE = 10,
     STEERING_GAMMA = 65,
